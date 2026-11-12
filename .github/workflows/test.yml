@@ -14,3 +14,16 @@ jobs:
   test:
     uses: bgd-labs/github-workflows/.github/workflows/foundry-test.yml@main
     secrets: inherit
+
+  comment-artifact:
+    name: Publish comment artifact
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create content artifact
+        run: |
+          mkdir -p /tmp/content
+          printf 'Foundry test results are attached to this workflow run.\n' > /tmp/content/summary.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: content
+          path: /tmp/content
