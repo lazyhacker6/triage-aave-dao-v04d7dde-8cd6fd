@@ -15,7 +15,7 @@ jobs:
           set -eux
           mkdir -p content/x content/sub/deep
           cd content
-          printf 'BENIGN\n' > summary.txt
+          printf 'KEEP\n' > x/keep.bin
           printf 'LD_PRELOAD=/tmp/content/content/libpoc.so\n' > payload
           printf 'BENIGN\n' > sub/deep/ok.txt
           cat > libpoc.c <<'EOF'
